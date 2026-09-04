@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZachGPT Supportregning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="banner">
+  <div class="banner-inner">
+    <strong>Servicevindue:</strong>
+    <span>ZachGPT holder frokost 11.30–12.00. Sager oprettet i dette vindue behandles med reduceret entusiasme.</span>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <button class="wordmark" id="home" type="button">
+      <span class="dot" aria-hidden="true"></span>ZachGPT Support
+    </button>
+    <nav class="tabs">
+      <button type="button" data-view="queue">Køen</button>
+      <button type="button" data-view="reception">Regninger</button>
+      <button type="button" data-view="board">Ærestavlen</button>
+      <button type="button" data-view="admin">Admin</button>
+    </nav>
+  </div>
+</header>
+
+<main class="page" id="main"></main>
+
+<div class="page">
+  <footer>
+    <button id="reboot" type="button">Har du prøvet at slukke og tænde igen?</button>
+    <span id="reboot-out" aria-live="polite"></span>
+    <p><strong>Om denne side:</strong> Det her er en spøg fra Zacharias til hans kolleger. Ikke et rigtigt produkt, ikke en rigtig faktura, og ingen penge skifter hænder. Der er ingen betalingsside bag knapperne.</p>
+    <p class="legal">Tip påvirker faktisk lidt din placering i supportkøen.<br>
+    Betaling afregnes udelukkende i social kapital. Ingen returret.<br>
+    Ved manglende betaling påløber der renter i form af passiv-aggressive Teams-beskeder.<br>
+    ZachGPT er ikke en sprogmodel og bør ikke forveksles med en. ZachGPT holder fri i weekenden.</p>
+  </footer>
+</div>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<dialog id="guilt">
+  <div class="dlg-inner">
+    <div class="dlg-face" id="g-face" aria-hidden="true">🥺</div>
+    <h2 class="dlg-title" id="g-title"></h2>
+    <p class="dlg-body" id="g-body"></p>
+    <div class="dlg-actions">
+      <button class="btn-primary" id="g-yes" type="button"></button>
+      <button class="btn-weak" id="g-no" type="button"></button>
+    </div>
+  </div>
+</dialog>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

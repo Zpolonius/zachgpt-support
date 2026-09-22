@@ -6,7 +6,7 @@
  *   "local" Tving localStorage. Data deles ikke mellem browsere.
  */
 window.ZG_CONFIG = {
-  backend: "auto",
+  backend: "rest",
   apiBase: "/api",
   pollMs: 4000,
   storageKey: "zachgpt-support"

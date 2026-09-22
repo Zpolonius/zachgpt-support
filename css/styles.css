@@ -486,7 +486,11 @@ img { max-width: 100%; }
   dialog::backdrop { background: #00190Ecc; }
   .dlg-inner { padding: 26px 24px 22px; text-align: center; }
   .dlg-face { font-size: 40px; line-height: 1; margin-bottom: 12px; }
-  .dlg-title { margin: 0 0 8px; font-size: 21px; font-weight: 500; text-wrap: balance; }
+  .dlg-title {
+    margin: 0 0 8px; font-size: 21px; font-weight: 500; text-wrap: balance;
+    font-family: var(--font-ui); text-transform: none; letter-spacing: -0.01em;
+    color: var(--ink);
+  }
   .dlg-body { margin: 0 0 20px; color: var(--muted); font-size: 15.5px; text-wrap: pretty; }
   .dlg-actions { display: grid; gap: 10px; }
 
@@ -512,3 +516,62 @@ img { max-width: 100%; }
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
+
+/* ---------- Nominering ---------- */
+.or {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0 12px; color: var(--muted);
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.btn-nominate {
+  font: inherit; cursor: pointer; width: 100%;
+  background: var(--surface-2); color: var(--ink);
+  border: 2px solid var(--border-strong); border-radius: var(--r-sm);
+  padding: 14px 16px; display: grid; gap: 2px; text-align: center;
+  transition: background .13s ease, transform .13s ease;
+}
+.btn-nominate:hover { background: var(--surface); }
+.btn-nominate:active { transform: translateY(1px); }
+.btn-nominate .n-title { font-weight: bold; font-size: 16px; }
+.btn-nominate .n-sub { font-size: 13px; color: var(--muted); }
+
+.receipt-head .quote {
+  margin: 14px 0 0; padding-left: 14px;
+  border-left: 3px solid var(--accent);
+  font-size: 16px; font-style: italic; text-wrap: pretty;
+}
+
+.pill.nom {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+  margin-left: 6px; vertical-align: 2px;
+}
+.rank .why {
+  grid-column: 2; font-size: 14px; font-style: italic;
+  color: var(--ink-subtle); margin-top: 4px; text-wrap: pretty;
+}
+
+#nominate-dlg { max-width: 460px; }
+#nominate-dlg .dlg-actions { margin-top: 4px; }
+
+/* ---------- Link per regning ---------- */
+.saved { display: block; }
+.saved .s-top {
+  display: flex; gap: 12px; align-items: center;
+  justify-content: space-between; flex-wrap: wrap;
+}
+.saved .s-name { font-weight: bold; }
+.saved .s-link { display: flex; gap: 8px; margin-top: 10px; }
+.saved .s-link input {
+  font: inherit; font-family: var(--font-mono); font-size: 12.5px;
+  flex: 1; min-width: 0; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--muted);
+}
+.saved .s-link .btn-secondary { padding: 7px 14px; font-size: 14px; }
+@media (max-width: 480px) {
+  .saved .s-link { flex-direction: column; }
+  .saved .s-link .btn-secondary { width: 100%; }
+}

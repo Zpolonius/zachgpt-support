@@ -55,7 +55,29 @@
     <p class="dlg-body" id="g-body"></p>
     <div class="dlg-actions">
       <button class="btn-primary" id="g-yes" type="button"></button>
+      <button class="btn-secondary" id="g-alt" type="button">Jeg nominerer dig i stedet</button>
       <button class="btn-weak" id="g-no" type="button"></button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="nominate-dlg">
+  <div class="dlg-inner" style="text-align:left">
+    <div class="dlg-face" aria-hidden="true">🏆</div>
+    <h2 class="dlg-title">Nominér til månedens medarbejder</h2>
+    <p class="dlg-body">Vælg en begrundelse. Den bliver offentliggjort på Ærestavlen sammen med dit navn, så vælg med omhu.</p>
+    <div class="field">
+      <label for="n-reason">Begrundelse</label>
+      <select id="n-reason"></select>
+    </div>
+    <div class="field" id="n-own-field" hidden>
+      <label for="n-own">Din egen formulering</label>
+      <textarea id="n-own"></textarea>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn-primary" id="n-send" type="button">Indsend nominering</button>
+      <button class="btn-weak" id="n-cancel" type="button">Fortryd</button>
+      <span id="n-msg" aria-live="polite" style="font-size:14px;color:var(--muted)"></span>
     </div>
   </div>
 </dialog>

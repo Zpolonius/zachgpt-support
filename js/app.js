@@ -6,11 +6,13 @@
   /* ============ Tilstand ============ */
 
   var PRESETS = ZG.PRESETS, URGENCY = ZG.URGENCY, TIERS = ZG.TIERS;
-  var STAGES = ZG.STAGES, REBOOTS = ZG.REBOOTS;
+  var STAGES = ZG.STAGES, REBOOTS = ZG.REBOOTS, NOMINATION = ZG.NOMINATION;
 
   var store = ZG.createStore();
   var connected = false, dbReady = false;
   var invoices = [], tickets = [], tips = {};
+  var invoicesLoaded = false;
+  var settings = {};
   var view = "queue", currentSlug = null, editing = null, draft = null;
   var lastTicket = null;
   var main = document.getElementById("main");
@@ -71,6 +73,7 @@
             discount: Number(v.discount) || 0, order: Number(v.order) || 0
           };
         }).sort(function (a, b) { return a.order - b.order || a.name.localeCompare(b.name, "da"); });
+        invoicesLoaded = true;
         render();
       });
 
@@ -82,6 +85,12 @@
             status: v.status || "open", at: v.at || "", doneAt: v.doneAt || ""
           };
         }).sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
+        render();
+      });
+
+      store.watch("settings", function (docs) {
+        settings = {};
+        docs.forEach(function (v) { if (v.id === "app") settings = v; });
         render();
       });
 
@@ -117,13 +126,86 @@
 
   /* ============ Navigation ============ */
 
-  function go(v, slug) {
-    view = v; currentSlug = slug || null;
-    if (v !== "admin") editing = null;
-    if (v !== "queue") lastTicket = null;
+  /* Hver visning har sin egen adresse, så en regning kan sendes som et direkte link. */
+  function hashFor(v, slug) {
+    if (v === "invoice") return "#/faktura/" + encodeURIComponent(slug);
+    if (v === "reception") return "#/regninger";
+    if (v === "board") return "#/tavlen";
+    if (v === "admin") return "#/admin";
+    return "#/koe";
+  }
+
+  function routeFromHash() {
+    var parts = String(location.hash || "").replace(/^#\/?/, "").split("/");
+    if (parts[0] === "faktura" && parts[1]) {
+      try { return { view: "invoice", slug: decodeURIComponent(parts[1]) }; }
+      catch (e) { return { view: "reception" }; }
+    }
+    if (parts[0] === "regninger") return { view: "reception" };
+    if (parts[0] === "tavlen") return { view: "board" };
+    if (parts[0] === "admin") return { view: "admin" };
+    return { view: "queue" };
+  }
+
+  function applyHash() {
+    var r = routeFromHash();
+    view = r.view;
+    currentSlug = r.slug || null;
+    if (view !== "admin") editing = null;
+    if (view !== "queue") lastTicket = null;
     render();
     window.scrollTo({ top: 0 });
   }
+
+  function go(v, slug) {
+    var h = hashFor(v, slug);
+    if (location.hash === h) applyHash(); else location.hash = h;
+  }
+
+  function isArtifact() { return store.kind() === "artifact"; }
+
+  /* Artifacten ligger i en iframe, hvor claude.ai styrer adressen — derfor kan
+     et direkte link kun pege på forsiden der. Hostet selv virker dybe links. */
+  function shareBase() {
+    var custom = String(settings.shareBase || "").trim();
+    if (custom) return custom.replace(/#.*$/, "").replace(/\s+/g, "");
+    return location.origin + location.pathname + location.search;
+  }
+
+  function invoiceLink(slug) {
+    return isArtifact() ? shareBase() : shareBase() + hashFor("invoice", slug);
+  }
+
+  function inviteMessage(inv) {
+    var first = String(inv.name).split(" ")[0];
+    var link = invoiceLink(inv.slug);
+    if (isArtifact()) {
+      return "Hej " + first + " \u{1F44B}\n" +
+        "Din opgørelse fra ZachGPT Support er klar.\n" + link + "\n" +
+        "Find dit navn i receptionen — så åbner din regning sig.";
+    }
+    return "Hej " + first + " \u{1F44B}\n" +
+      "Din opgørelse fra ZachGPT Support er klar:\n" + link;
+  }
+
+  function copyToClipboard(text, field, btn) {
+    var was = btn.textContent;
+    function done(msg) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = was; }, 1600);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done("Kopieret"); }, function () {
+        if (field) field.select();
+        done("Markeret — tryk ⌘C");
+      });
+    } else {
+      if (field) field.select();
+      done("Markeret — tryk ⌘C");
+    }
+  }
+
+  window.addEventListener("hashchange", applyHash);
   document.getElementById("home").addEventListener("click", function () { go("queue"); });
   document.querySelectorAll("nav.tabs button").forEach(function (b) {
     b.addEventListener("click", function () { go(b.dataset.view); });
@@ -148,13 +230,17 @@
 
   function statsBlock() {
     var paid = Object.keys(tips).filter(function (k) { return (tips[k].pct || 0) > 0; }).length;
-    var total = Object.keys(tips).reduce(function (s, k) { return s + (Number(tips[k].tip) || 0); }, 0);
+    var noms = Object.keys(tips).filter(function (k) { return tips[k].method === "nomination"; }).length;
+    var total = Object.keys(tips).reduce(function (s, k) {
+      return s + (tips[k].method === "nomination" ? 0 : Number(tips[k].tip) || 0);
+    }, 0);
     return '' +
       '<dl class="stats">' +
         '<div class="stat"><dt>Sager i kø</dt><dd>' + openTickets().length + '<span class="fine">Behandles i tilfældig rækkefølge</span></dd></div>' +
         '<div class="stat"><dt>Gns. svartid</dt><dd>4 min<span class="fine">Uden for åbningstid: 6 min</span></dd></div>' +
         '<div class="stat"><dt>Betalte regninger</dt><dd>' + paid + '<span class="fine">Af ' + invoices.length + ' udsendte</span></dd></div>' +
-        '<div class="stat"><dt>Tip i alt</dt><dd>' + kr(total) + '<span class="fine">Afregnet i social kapital</span></dd></div>' +
+        '<div class="stat"><dt>Tip i alt</dt><dd>' + kr(total) + '<span class="fine">' +
+          (noms ? noms + " betalte med nominering" : "Afregnet i social kapital") + '</span></dd></div>' +
       '</dl>';
   }
 
@@ -343,7 +429,16 @@
 
   function renderInvoice() {
     var inv = findInvoice(currentSlug);
-    if (!inv) { go("reception"); return; }
+    if (!inv) {
+      main.innerHTML = '<section class="hero"><p class="eyebrow">Serviceopgørelse</p>' +
+        (invoicesLoaded
+          ? '<h1>Den regning findes ikke.</h1><p class="lede">Enten er den betalt og ryddet af vejen, eller også er linket skrevet forkert.</p>'
+          : '<h1>Henter regningen…</h1><p class="lede">Et øjeblik.</p>') +
+        '<div class="hero-cta"><button class="btn-secondary" type="button" id="to-rec">Se alle regninger</button></div></section>';
+      var b = document.getElementById("to-rec");
+      if (b) b.addEventListener("click", function () { go("reception"); });
+      return;
+    }
 
     var base = grandTotal(inv), sub = subtotal(inv), t = tips[inv.slug];
 
@@ -409,6 +504,11 @@
           '<input id="custom" type="text" inputmode="numeric" placeholder="Andet beløb (min. 15 %)" aria-label="Andet beløb i kroner">' +
           '<button class="btn-secondary" id="custom-go" type="button">Tilføj</button>' +
         '</div>' +
+        '<div class="or"><span>eller betal med anerkendelse</span></div>' +
+        '<button class="btn-nominate" type="button" id="nominate">' +
+          '<span class="n-title">Nominér mig til månedens medarbejder</span>' +
+          '<span class="n-sub">Koster ingenting. Er alligevel mere værd.</span>' +
+        '</button>' +
         '<div class="notip-zone"><button class="notip" id="notip" type="button">Ingen tip</button></div>' +
         '<p class="sla-note">Tip påvirker ikke din placering i supportkøen.</p>' +
       '</section>';
@@ -437,13 +537,15 @@
       });
     }
     notip.addEventListener("click", function () { openGuilt(inv, 0); });
+    document.getElementById("nominate").addEventListener("click", function () { openNominate(inv); });
   }
 
-  function pay(inv, tip, wasBumped) {
+  function pay(inv, tip, wasBumped, extra) {
     var base = grandTotal(inv);
     var pct = base ? Math.round(tip / base * 100) : 0;
     var rec = { name: inv.name, pct: pct, tip: tip, base: base, total: base + tip,
-                bumped: !!wasBumped, at: new Date().toISOString() };
+                bumped: !!wasBumped, method: "tip", reason: "", at: new Date().toISOString() };
+    if (extra) Object.keys(extra).forEach(function (k) { rec[k] = extra[k]; });
     saveTip(inv.slug, rec); tips[inv.slug] = rec;
     renderReceipt(inv, rec, true);
     confetti();
@@ -459,7 +561,11 @@
   function renderReceipt(inv, r, fresh) {
     var tier = tierFor(r.pct || 0);
     var happy = (r.pct || 0) > 0;
-    var fine = happy
+    var nominated = r.method === "nomination";
+
+    var fine = nominated
+      ? NOMINATION.fine.join("\n")
+      : happy
       ? (r.bumped
           ? "Beløbet er rundet op til minimumssatsen på 15 %. Systemet tillader ikke mindre. Det gør jeg heller ikke.\n"
           : "Beløbet er trukket fra din sociale kapital.\n") +
@@ -473,14 +579,17 @@
     slot.innerHTML =
       '<section class="receipt" data-mood="' + (happy ? "happy" : "sad") + '" tabindex="-1">' +
         '<div class="receipt-head">' +
-          '<span class="badge">' + (happy ? "Betalt" : "Ingen tip registreret") + '</span>' +
-          '<p class="msg">' + (happy ? "Tak. Det betyder faktisk noget." : "Registreret. Det er helt i orden.") + '</p>' +
-          '<p class="msg-sub">' + (happy ? esc(tier.perk) : "Vi er ikke vrede. Bare lidt skuffede.") + '</p>' +
+          '<span class="badge">' + (nominated ? "Nomineret" : (happy ? "Betalt" : "Ingen tip registreret")) + '</span>' +
+          '<p class="msg">' + (nominated ? esc(NOMINATION.thanks) : (happy ? "Tak. Det betyder faktisk noget." : "Registreret. Det er helt i orden.")) + '</p>' +
+          '<p class="msg-sub">' + (nominated ? esc(NOMINATION.sub) : (happy ? esc(tier.perk) : "Vi er ikke vrede. Bare lidt skuffede.")) + '</p>' +
+          (nominated && r.reason ? '<p class="quote">“' + esc(r.reason) + '”</p>' : "") +
         '</div>' +
         '<div class="receipt-body">' +
           '<div class="trow"><span>Serviceydelser</span><span>' + kr(r.base) + '</span></div>' +
-          '<div class="trow"><span>Tip' + (happy ? " (" + r.pct + " %)" : "") + '</span><span>' + kr(r.tip) + '</span></div>' +
-          '<div class="trow grand"><span>Total</span><span>' + kr(r.total) + '</span></div>' +
+          (nominated
+            ? '<div class="trow"><span>Nominering (' + r.pct + ' %)</span><span>afregnet i anerkendelse</span></div>'
+            : '<div class="trow"><span>Tip' + (happy ? " (" + r.pct + " %)" : "") + '</span><span>' + kr(r.tip) + '</span></div>') +
+          '<div class="trow grand"><span>Total</span><span>' + (nominated ? "Kvit" : kr(r.total)) + '</span></div>' +
           '<p class="receipt-fine">' + esc(fine).replace(/\n/g, "<br>") + '</p>' +
           '<div class="receipt-actions">' +
             '<button class="btn-secondary" type="button" id="to-board">Se Ærestavlen</button>' +
@@ -522,24 +631,93 @@
     dlg.close();
     if (guiltInv) payNothing(guiltInv);
   });
+  document.getElementById("g-alt").addEventListener("click", function () {
+    var inv = guiltInv;
+    dlg.close();
+    if (inv) openNominate(inv);
+  });
+
+  /* ---- Nominering ---- */
+
+  var nomDlg = document.getElementById("nominate-dlg");
+  var nomInv = null;
+
+  function openNominate(inv) {
+    nomInv = inv;
+    var sel = document.getElementById("n-reason");
+    var own = document.getElementById("n-own");
+    var msg = document.getElementById("n-msg");
+
+    if (!sel.options.length) {
+      NOMINATION.reasons.forEach(function (r, i) {
+        var o = document.createElement("option");
+        o.value = String(i);
+        o.textContent = r;
+        sel.appendChild(o);
+      });
+      own.placeholder = NOMINATION.placeholder;
+      sel.addEventListener("change", toggleOwn);
+      document.getElementById("n-send").addEventListener("click", sendNomination);
+      document.getElementById("n-cancel").addEventListener("click", function () { nomDlg.close(); });
+    }
+    sel.selectedIndex = 0;
+    own.value = "";
+    msg.textContent = "";
+    toggleOwn();
+    nomDlg.showModal();
+    sel.focus();
+  }
+
+  function isOwnReason() {
+    var sel = document.getElementById("n-reason");
+    return Number(sel.value) === NOMINATION.reasons.length - 1;
+  }
+
+  function toggleOwn() {
+    document.getElementById("n-own-field").hidden = !isOwnReason();
+  }
+
+  function sendNomination() {
+    var msg = document.getElementById("n-msg");
+    var reason = isOwnReason()
+      ? document.getElementById("n-own").value.trim()
+      : NOMINATION.reasons[Number(document.getElementById("n-reason").value)];
+
+    if (!reason) {
+      msg.textContent = "Skriv en begrundelse. Én sætning er nok.";
+      document.getElementById("n-own").focus();
+      return;
+    }
+    if (reason.length > 180) reason = reason.slice(0, 178).trim() + "…";
+
+    var inv = nomInv;
+    nomDlg.close();
+    if (!inv) return;
+    pay(inv, grandTotal(inv) * NOMINATION.pct / 100, false, { method: "nomination", reason: reason });
+  }
 
   /* ---- Ærestavlen ---- */
 
   function renderBoard() {
     var rows = Object.keys(tips).map(function (slug) {
       var t = tips[slug];
-      return { slug: slug, name: t.name || slug, pct: Number(t.pct) || 0, tip: Number(t.tip) || 0 };
-    }).sort(function (a, b) { return b.tip - a.tip || a.name.localeCompare(b.name, "da"); });
+      return {
+        slug: slug, name: t.name || slug, pct: Number(t.pct) || 0, tip: Number(t.tip) || 0,
+        method: t.method || "tip", reason: t.reason || ""
+      };
+    }).sort(function (a, b) { return b.pct - a.pct || b.tip - a.tip || a.name.localeCompare(b.name, "da"); });
 
     var body = rows.length
       ? '<div class="board">' + rows.map(function (r, i) {
           var tier = tierFor(r.pct);
-          var cls = r.tip === 0 ? "rank shame" : (i === 0 ? "rank top" : "rank");
+          var nom = r.method === "nomination";
+          var cls = r.pct === 0 ? "rank shame" : (i === 0 ? "rank top" : "rank");
           return '<div class="' + cls + '">' +
-            '<span class="pos">' + (r.tip === 0 ? "—" : (i + 1)) + '</span>' +
-            '<span class="nm">' + esc(r.name) + '</span>' +
+            '<span class="pos">' + (r.pct === 0 ? "—" : (i + 1)) + '</span>' +
+            '<span class="nm">' + esc(r.name) + (nom ? ' <span class="pill nom">Nominering</span>' : "") + '</span>' +
             '<span class="tier">' + esc(tier.name) + ' · ' + esc(tier.perk) + '</span>' +
-            '<span class="val">' + kr(r.tip) + '</span>' +
+            (nom && r.reason ? '<span class="why">“' + esc(r.reason) + '”</span>' : "") +
+            '<span class="val">' + (nom ? "Anerkendelse" : kr(r.tip)) + '</span>' +
           '</div>';
         }).join("") + '</div>'
       : '<div class="empty"><p><strong>Tavlen er tom.</strong></p>' +
@@ -650,11 +828,21 @@
     }).join("");
 
     var savedHtml = invoices.length ? invoices.map(function (inv) {
-      return '<div class="saved"><span>' + esc(inv.name) + ' · ' + kr(grandTotal(inv)) + '</span>' +
-        '<span class="acts">' +
-          '<button type="button" data-edit="' + esc(inv.slug) + '">Rediger</button>' +
-          '<button type="button" class="del" data-del="' + esc(inv.slug) + '">Slet</button>' +
-        '</span></div>';
+      return '<div class="saved">' +
+        '<div class="s-top">' +
+          '<span class="s-name">' + esc(inv.name) + ' · ' + kr(grandTotal(inv)) + '</span>' +
+          '<span class="acts">' +
+            '<button type="button" data-open="' + esc(inv.slug) + '">Åbn</button>' +
+            '<button type="button" data-edit="' + esc(inv.slug) + '">Rediger</button>' +
+            '<button type="button" class="del" data-del="' + esc(inv.slug) + '">Slet</button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="s-link">' +
+          '<input type="text" readonly value="' + esc(invoiceLink(inv.slug)) + '" aria-label="Link til ' + esc(inv.name) + '">' +
+          (isArtifact() ? "" : '<button class="btn-secondary" type="button" data-copy="' + esc(inv.slug) + '">Kopiér link</button>') +
+          '<button class="btn-secondary" type="button" data-msg="' + esc(inv.slug) + '">Kopiér besked</button>' +
+        '</div>' +
+      '</div>';
     }).join("") : '<p style="color:var(--muted);font-size:13px">Ingen gemte regninger endnu.</p>';
 
     main.innerHTML =
@@ -695,7 +883,24 @@
         '<span id="save-msg" aria-live="polite" style="font-size:14px;color:var(--muted)"></span>' +
       '</div>' +
 
+      '<h2>Delingslink</h2>' +
+      '<div class="field">' +
+        '<label for="f-share">Linket dine kolleger åbner</label>' +
+        '<input type="text" id="f-share" value="' + esc(settings.shareBase || "") + '" placeholder="' + esc(location.origin + location.pathname) + '">' +
+        '<span class="hint">' + (isArtifact()
+          ? 'Hent linket i artifactens delingsmenu og sæt det ind her. Siden kan ikke selv se sin adresse, fordi den kører i en iframe.'
+          : 'Tomt felt betyder, at siden bruger sin egen adresse. Udfyld kun hvis den ligger bag et andet domæne.') + '</span>' +
+      '</div>' +
+      '<div class="admin-actions">' +
+        '<button class="btn-secondary" type="button" id="save-share">Gem link</button>' +
+        '<span id="share-msg" aria-live="polite" style="font-size:14px;color:var(--muted)"></span>' +
+      '</div>' +
+
       '<h2>Gemte regninger</h2>' +
+      '<p style="margin:-6px 0 14px;font-size:13.5px;color:var(--muted)">' + (isArtifact()
+        ? '<strong>Kopiér besked</strong> giver en færdig Teams-besked med navn og link. Artifact-versionen kan ikke sende folk direkte ind på én regning — de vælger deres navn i receptionen. Hoster du siden selv, virker direkte links.'
+        : '<strong>Kopiér link</strong> går direkte til den enkeltes regning. Send det i en privat besked, så ser de deres egen først.') +
+      '</p>' +
       '<div class="saved-list">' + savedHtml + '</div>';
 
     wireAdmin();
@@ -768,6 +973,34 @@
     document.getElementById("save").addEventListener("click", onSave);
     document.getElementById("cancel").addEventListener("click", function () {
       editing = null; draft = blankDraft(); renderAdmin();
+    });
+
+    main.querySelectorAll("[data-open]").forEach(function (b) {
+      b.addEventListener("click", function () { go("invoice", b.dataset.open); });
+    });
+
+    main.querySelectorAll("[data-copy]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        copyToClipboard(invoiceLink(b.dataset.copy), b.parentNode.querySelector("input"), b);
+      });
+    });
+
+    main.querySelectorAll("[data-msg]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var inv = findInvoice(b.dataset.msg);
+        if (inv) copyToClipboard(inviteMessage(inv), null, b);
+      });
+    });
+
+    document.getElementById("save-share").addEventListener("click", function () {
+      var msg = document.getElementById("share-msg");
+      var val = document.getElementById("f-share").value.trim();
+      msg.textContent = "Gemmer…";
+      store.set("settings", "app", { shareBase: val }).then(function () {
+        msg.textContent = val ? "Gemt." : "Ryddet — siden bruger sin egen adresse.";
+      }).catch(function () {
+        msg.textContent = "Kunne ikke gemme. Kun ejeren af siden kan ændre det.";
+      });
     });
 
     main.querySelectorAll("[data-edit]").forEach(function (b) {
@@ -883,6 +1116,6 @@
   }
 
   /* ---- Start ---- */
-  render();
+  applyHash();
   connect();
 })(window.ZG);

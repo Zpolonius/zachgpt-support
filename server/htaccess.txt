@@ -1,0 +1,17 @@
+# Omdøb denne fil til .htaccess og læg den i roden af subdomænet.
+
+# /api/tickets -> api.php med PATH_INFO = /tickets
+RewriteEngine On
+RewriteRule ^api/?$      api.php      [L,QSA]
+RewriteRule ^api/(.*)$   api.php/$1   [L,QSA]
+
+# Datafilen må ikke kunne hentes direkte i browseren.
+<Files "data.json">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>

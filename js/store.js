@@ -24,7 +24,7 @@ window.ZG = window.ZG || {};
 (function (ZG) {
   "use strict";
 
-  var COLLECTIONS = ["invoices", "tickets", "tips"];
+  var COLLECTIONS = ["invoices", "tickets", "tips", "settings"];
 
   /* ---------- Artifact-databasen ---------- */
 
@@ -35,7 +35,8 @@ window.ZG = window.ZG || {};
   ArtifactBackend.prototype.watch = function (col, cb) {
     return this.db.collection(col).onSnapshot(function (snap) {
       cb(snap.docs.map(function (d) {
-        var v = d.data() || {};
+        // Snapshots er frosne — kopiér før vi lægger id'et på, ellers kaster det i strict mode.
+        var v = Object.assign({}, d.data() || {});
         v.id = d.id;
         return v;
       }));

@@ -18,6 +18,7 @@ window.ZG = window.ZG || {};
     { id: "igen",     desc: "Forklarede det samme én gang til",             note: "Med samme tålmodighed som første gang",               unit: 129 },
     { id: "fejl",     desc: "Oversatte en fejlbesked til dansk",            note: "Uden at grine",                                       unit: 175 },
     { id: "skaerm",   desc: "Kiggede på din skærm og så det med det samme", note: "Det tog fire sekunder. Du havde brugt en time.",      unit: 275 },
+    { id: "udenfor",  desc: "Ikke mit bord",                            note: "Ikke det jeg er ansat til. Men af mit gode hjerte.",  unit: 650 },
     { id: "navn",     desc: "Brug af varemærket “ZachGPT”",                 note: "Licens ikke faktureret i denne periode",              unit: 0   }
   ];
 
@@ -33,6 +34,7 @@ window.ZG = window.ZG || {};
   ];
 
   var TIERS = [
+    { min: 30, name: "Månedens Medarbejder (kandidat)", perk: "Nominering under behandling. Sagsbehandler: mig." },
     { min: 25, name: "ZachGPT Platinum",  perk: "Direkte linje. Ingen kø." },
     { min: 20, name: "ZachGPT Guld",      perk: "Forrest i køen næste gang noget brænder." },
     { min: 15, name: "ZachGPT Sølv",      perk: "Svar inden frokost." },
@@ -52,6 +54,27 @@ window.ZG = window.ZG || {};
       yes: "Nej nej nej — jeg giver tip", no: "Jeg accepterer konsekvenserne" }
   ];
 
+  /* Betaling ved nominering. Værdien er sat til 30 % — anerkendelse er dyrere end penge. */
+  var NOMINATION = {
+    pct: 30,
+    reasons: [
+      "Svarer hurtigere end vores egne systemer",
+      "Har aldrig sagt “det er ikke mit bord”",
+      "Redder mig i checkout mindst én gang om ugen",
+      "Forklarer ting uden at få mig til at føle mig dum",
+      "Er billigere end en konsulent og i bedre humør",
+      "Skriv min egen begrundelse"
+    ],
+    placeholder: "Fx: Løste på fire minutter det, jeg havde siddet med i to dage.",
+    thanks: "Nomineringen er modtaget.",
+    sub: "Den er videresendt til HR. HR er i denne sammenhæng også mig.",
+    fine: [
+      "Betalingsmetode: anerkendelse.",
+      "Din begrundelse er offentliggjort på Ærestavlen. Ja, med dit navn.",
+      "Nomineringen behandles på næste afdelingsmøde, som jeg også selv indkalder til."
+    ]
+  };
+
   var REBOOTS = [
     "Nej. Det har du ikke.",
     "Prøv igen, men denne gang med overbevisning.",
@@ -64,5 +87,6 @@ window.ZG = window.ZG || {};
   ZG.URGENCY = URGENCY;
   ZG.TIERS = TIERS;
   ZG.STAGES = STAGES;
+  ZG.NOMINATION = NOMINATION;
   ZG.REBOOTS = REBOOTS;
 })(window.ZG);

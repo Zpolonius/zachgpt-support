@@ -1,8 +1,11 @@
 /* Konfiguration. Rediger denne fil — resten af koden læser den herfra.
  *
  * backend:
- *   "auto"  Artifact-databasen når siden kører som Claude-artifact, ellers localStorage.
- *   "rest"  Dit eget API. Kræver at der kører en server på apiBase (se server/server.mjs).
+ *   "auto"  Finder selv ud af det: artifact-databasen hvis siden kører som
+ *           Claude-artifact, ellers dit eget API på apiBase hvis det svarer,
+ *           ellers localStorage. Den samme fil virker dermed alle tre steder,
+ *           og du behøver ikke rette her før et deploy.
+ *   "rest"  Tving dit eget API. Fejler hvis der ikke er noget på apiBase.
  *   "local" Tving localStorage. Data deles ikke mellem browsere.
  */
 window.ZG_CONFIG = {

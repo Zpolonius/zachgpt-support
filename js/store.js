@@ -186,17 +186,32 @@ window.ZG = window.ZG || {};
 
   /* ---------- Valg af backend ---------- */
 
+  /* Findes der et API på apiBase? Ét kald afgør det. Fejler det — også på
+     file:// hvor fetch slet ikke må — falder vi tilbage på localStorage. */
+  function probeRest(cfg) {
+    if (typeof fetch !== "function") return Promise.resolve(null);
+    var base = String(cfg.apiBase).replace(/\/+$/, "");
+    return fetch(base + "/settings").then(function (r) {
+      return r.ok ? new RestBackend(cfg.apiBase, cfg.pollMs) : null;
+    }).catch(function () { return null; });
+  }
+
   function pick(cfg) {
     if (cfg.backend === "rest") return Promise.resolve(new RestBackend(cfg.apiBase, cfg.pollMs));
     if (cfg.backend === "local") return Promise.resolve(new LocalBackend(cfg.storageKey));
 
-    // "auto": brug artifact-databasen hvis siden kører som artifact, ellers localStorage.
-    if (!window.claude || !window.claude.use) return Promise.resolve(new LocalBackend(cfg.storageKey));
+    /* "auto": artifact-databasen først, så dit eget API, ellers localStorage.
+       Den samme byggede fil virker dermed både som artifact og på webhotellet. */
+    function fallback() {
+      return probeRest(cfg).then(function (rest) {
+        return rest || new LocalBackend(cfg.storageKey);
+      });
+    }
+
+    if (!window.claude || !window.claude.use) return fallback();
     return window.claude.use("db").then(function (db) {
-      return db ? new ArtifactBackend(db) : new LocalBackend(cfg.storageKey);
-    }, function () {
-      return new LocalBackend(cfg.storageKey);
-    });
+      return db ? new ArtifactBackend(db) : fallback();
+    }, fallback);
   }
 
   ZG.createStore = function (config) {

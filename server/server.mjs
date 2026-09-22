@@ -15,9 +15,9 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DATA = join(ROOT, "server", "data.json");
+const DATA = join(ROOT, "data.json");
 const PORT = Number(process.env.PORT) || 8787;
-const COLLECTIONS = new Set(["invoices", "tickets", "tips"]);
+const COLLECTIONS = new Set(["invoices", "tickets", "tips", "settings"]);
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -30,11 +30,11 @@ const TYPES = {
 };
 
 async function load() {
-  if (!existsSync(DATA)) return { invoices: {}, tickets: {}, tips: {} };
+  if (!existsSync(DATA)) return { invoices: {}, tickets: {}, tips: {}, settings: {} };
   try {
     return JSON.parse(await readFile(DATA, "utf8"));
   } catch {
-    return { invoices: {}, tickets: {}, tips: {} };
+    return { invoices: {}, tickets: {}, tips: {}, settings: {} };
   }
 }
 

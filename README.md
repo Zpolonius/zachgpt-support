@@ -29,8 +29,8 @@ browseren — så kører den på `localStorage`.
 | `js/store.js` | Datalaget — tre udskiftelige backends |
 | `js/app.js` | Visninger og logik |
 | `server/server.mjs` | Statisk server + JSON-API til lokal kørsel (Node) |
-| `server/api.php` | Samme API i PHP, til webhoteller uden Node |
-| `server/htaccess.txt` | Omskrivningsregler til Apache — omdøbes til `.htaccess` |
+| `api.php` | Samme API i PHP, til webhoteller uden Node |
+| `.htaccess` | Sender `/api/...` til `api.php` og skjuler `data.json` |
 | `build.mjs` | Samler alt til én fil i `dist/artifact.html` |
 
 Vil du ændre jokes, priser eller kategorier, skal du kun røre `js/data.js`.
@@ -40,18 +40,13 @@ Hver post i `PRESETS` er både en linjepost på regningen og en kategori i køen
 
 `js/config.js` styrer hvor data havner:
 
-- **`auto`** (standard) — artifact-databasen hvis siden kører som Claude-artifact,
-  ellers `localStorage`.
-- **`rest`** — dit eget API. Vælg denne når du hoster selv og vil dele data
-  mellem kolleger.
-- **`local`** — tvungen `localStorage`. Data deles ikke mellem browsere, så
+- **`auto`** (standard) — prøver artifact-databasen først, så dit eget API på
+  `apiBase`, og ender på `localStorage` hvis ingen af delene svarer. Den samme
+  fil virker derfor både som artifact og på webhotellet, **uden at du skal rette
+  noget før et deploy.**
+- **`rest`** — tving dit eget API.
+- **`local`** — tving `localStorage`. Data deles ikke mellem browsere, så
   Ærestavlen bliver ensom.
-
-Til hosting:
-
-```js
-window.ZG_CONFIG = { backend: "rest", apiBase: "/api" };
-```
 
 ### API-kontrakt
 
@@ -106,22 +101,28 @@ Det er en statisk side plus et lille API.
 ### På et almindeligt webhotel (Simply.com m.fl.)
 
 Danske webhoteller kører typisk PHP og ikke Node, så `server/server.mjs` kan
-ikke bruges der. `server/api.php` er den samme API i PHP.
+ikke bruges der. `api.php` er den samme API i PHP, og repoet er skruet sammen,
+så roden kan lægges direkte ud — intet skal flyttes eller rettes.
 
 1. Opret et subdomæne, fx `zachgpt.zpolonius.dk`.
-2. Sæt `backend: "rest"` og `apiBase: "/api"` i `js/config.js`.
-3. Læg følgende i subdomænets rod via FTP:
-   - `index.html`, `css/`, `js/`
-   - `server/api.php` → flyt op i roden som `api.php`
-   - `server/htaccess.txt` → omdøb til `.htaccess`
-4. Sørg for, at PHP må skrive i mappen. `data.json` oprettes automatisk ved
-   første skrivning; `.htaccess` blokerer for, at den kan hentes i browseren.
+2. Peg webhotellets Git-deploy mod dette repo, eller upload rodens filer via FTP:
+   `index.html`, `api.php`, `.htaccess`, `css/`, `js/`.
+   `server/`, `dist/`, `build.mjs` og `README.md` er kun til udvikling og gør
+   ingen skade, hvis de følger med.
+3. Sørg for, at PHP må skrive i mappen. `data.json` oprettes ved første
+   skrivning og blokeres af `.htaccess`.
 
-Tjek at det virker: `https://dit-subdomæne/api/invoices` skal svare `[]` eller
-en liste — ikke en 404. Kommer der 404, understøtter serveren ikke omskrivningen,
-og så kan `apiBase` sættes til `"/api.php"` i stedet.
+`js/config.js` skal ikke røres — `auto` finder selv API'et.
 
-`data.json` er hele databasen. Tag en kopi inden du rydder op.
+Tjek at det virker: `https://dit-subdomæne/api/invoices` skal svare `[]` eller en
+liste. Kommer der 404, understøtter serveren ikke omskrivningen i `.htaccess`, og
+så sættes `apiBase` til `"/api.php"` i `js/config.js`.
+
+**Bemærk:** `.htaccess` begynder med et punktum, så nogle FTP-klienter skjuler
+den. Slå visning af skjulte filer til, hvis den ikke ser ud til at blive uploadet.
+
+`data.json` er hele databasen og ligger uden for Git. Tag en kopi, inden du
+rydder op i filerne.
 
 ## Artifact-versionen
 

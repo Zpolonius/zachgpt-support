@@ -2,10 +2,10 @@
 /* Samme JSON-API som server/server.mjs, men i PHP — til webhoteller uden Node
  * (Simply.com, One.com, DanDomain og resten af flokken).
  *
- * Lægges i roden af subdomænet sammen med index.html. .htaccess sender
- * /api/... herind. Data havner i data.json ved siden af.
+ * Ligger i roden sammen med index.html og .htaccess, som sender /api/... herind.
+ * Data havner i data.json ved siden af — den blokeres af .htaccess.
  *
- * Husk backend: "rest" i js/config.js.
+ * Der skal ikke rettes i js/config.js: "auto" opdager selv API'et.
  */
 declare(strict_types=1);
 

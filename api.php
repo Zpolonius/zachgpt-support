@@ -18,8 +18,14 @@ const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings', 'presets'];
    og betale — men ikke lave deres egne regninger eller pille ved priserne. */
 const PROTECTED = ['invoices', 'presets', 'settings'];
 
-$DATA   = __DIR__ . '/data.json';
-$SECRET = __DIR__ . '/admin-password.txt';
+$DATA = __DIR__ . '/data.json';
+
+/* Adgangskoden søges først uden for web-roden, hvor ingen webserver kan levere
+   den overhovedet. Findes den ikke der, bruges roden, hvor .htaccess spærrer. */
+$SECRET_PATHS = [
+    dirname(__DIR__) . '/zachgpt-admin-password.txt',
+    __DIR__ . '/admin-password.txt',
+];
 
 function fail(int $code, string $message): void
 {
@@ -83,19 +89,38 @@ function body(): array
  * Git og blokeres af .htaccess, så indholdet kan ikke hentes i browseren.
  */
 
-function adminPassword(): ?string
+function adminSecret(): ?string
 {
-    global $SECRET;
-    if (!is_readable($SECRET)) {
-        return null;
+    global $SECRET_PATHS;
+    foreach ($SECRET_PATHS as $path) {
+        if (is_readable($path)) {
+            $value = trim((string) file_get_contents($path));
+            if ($value !== '') {
+                return $value;
+            }
+        }
     }
-    $pw = trim((string) file_get_contents($SECRET));
-    return $pw === '' ? null : $pw;
+    return null;
 }
 
-function tokenFor(string $password): string
+function adminPassword(): ?string
 {
-    return hash('sha256', 'zachgpt:' . $password);
+    return adminSecret();
+}
+
+/* Filen må indeholde enten adgangskoden i klartekst eller dens sha256-hash
+   (64 hex-tegn). Med et hash står kodeordet ingen steder på serveren. */
+function secretMatches(string $stored, string $sent): bool
+{
+    if (preg_match('/^[a-f0-9]{64}$/i', $stored) === 1) {
+        return hash_equals(strtolower($stored), hash('sha256', $sent));
+    }
+    return hash_equals($stored, $sent);
+}
+
+function tokenFor(string $secret): string
+{
+    return hash('sha256', 'zachgpt:' . $secret);
 }
 
 function isAuthorised(): bool
@@ -140,7 +165,7 @@ if ($collection === 'auth') {
         $sent = (string) (body()['password'] ?? '');
         /* Lille forsinkelse, så adgangskoden ikke kan gættes i et hurtigt loop. */
         usleep(400000);
-        if ($sent === '' || !hash_equals($pw, $sent)) {
+        if ($sent === '' || !secretMatches($pw, $sent)) {
             fail(401, 'forkert adgangskode');
         }
         echo json_encode(['token' => tokenFor($pw), 'required' => true]);

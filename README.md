@@ -84,15 +84,29 @@ gang med.
 
 ## Adgangskode til Admin
 
-Læg en fil ved navn `admin-password.txt` i roden med adgangskoden som eneste
-indhold:
+Serveren leder to steder, i denne rækkefølge:
+
+1. `../zachgpt-admin-password.txt` — **et niveau over web-roden.** Bedst: ingen
+   webserver kan levere en fil, der ligger uden for det område, den serverer.
+2. `admin-password.txt` i roden — virker, men hviler på at `.htaccess` bliver
+   læst.
+
+Indholdet må være enten adgangskoden i klartekst:
 
 ```
 mit-hemmelige-kodeord
 ```
 
-Filen ligger uden for Git og blokeres af `.htaccess`. Findes den ikke, er alt
-åbent — så hvis du hoster siden, bør du oprette den.
+eller dens sha256-hash, så kodeordet ikke står nogen steder på serveren:
+
+```bash
+printf 'mit-hemmelige-kodeord' | shasum -a 256
+```
+
+Læg de 64 tegn i filen i stedet. Serveren genkender selv formatet.
+
+Begge stier er uden for Git. Findes filen ingen af stederne, er alt åbent — så
+hvis du hoster siden, bør du oprette den.
 
 Serveren kræver derefter adgangskode for at skrive til `invoices`, `presets` og
 `settings`, samt for enhver sletning. Kolleger kan stadig oprette sager, betale

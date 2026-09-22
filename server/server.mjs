@@ -17,7 +17,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DATA = join(ROOT, "data.json");
-const SECRET = join(ROOT, "admin-password.txt");
+// Samme rækkefølge som api.php: uden for roden først, så i roden.
+const SECRET_PATHS = [
+  join(ROOT, "..", "zachgpt-admin-password.txt"),
+  join(ROOT, "admin-password.txt")
+];
 const PORT = Number(process.env.PORT) || 8787;
 const COLLECTIONS = new Set(["invoices", "tickets", "tips", "settings", "presets"]);
 
@@ -25,17 +29,28 @@ const COLLECTIONS = new Set(["invoices", "tickets", "tips", "settings", "presets
 const PROTECTED = new Set(["invoices", "presets", "settings"]);
 
 async function adminPassword() {
-  if (!existsSync(SECRET)) return null;
-  const pw = (await readFile(SECRET, "utf8")).trim();
-  return pw === "" ? null : pw;
+  for (const path of SECRET_PATHS) {
+    if (!existsSync(path)) continue;
+    const value = (await readFile(path, "utf8")).trim();
+    if (value !== "") return value;
+  }
+  return null;
 }
 
-const tokenFor = (pw) => createHash("sha256").update("zachgpt:" + pw).digest("hex");
+const sha256 = (s) => createHash("sha256").update(s).digest("hex");
+const tokenFor = (secret) => sha256("zachgpt:" + secret);
 
 function sameToken(a, b) {
   const x = Buffer.from(String(a));
   const y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// Filen må indeholde adgangskoden i klartekst eller dens sha256-hash.
+function secretMatches(stored, sent) {
+  return /^[a-f0-9]{64}$/i.test(stored)
+    ? sameToken(stored.toLowerCase(), sha256(sent))
+    : sameToken(stored, sent);
 }
 
 const TYPES = {
@@ -99,7 +114,7 @@ async function api(req, res, parts) {
       if (pw === null) return send(res, 200, { token: "", required: false });
       const sent = String((await readBody(req)).password ?? "");
       await new Promise((r) => setTimeout(r, 400));
-      if (!sent || !sameToken(sent, pw)) return send(res, 401, { error: "forkert adgangskode" });
+      if (!sent || !secretMatches(pw, sent)) return send(res, 401, { error: "forkert adgangskode" });
       return send(res, 200, { token: tokenFor(pw), required: true });
     }
     return send(res, 405, { error: "metode ikke tilladt" });

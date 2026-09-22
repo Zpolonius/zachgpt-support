@@ -16,7 +16,11 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DATA = join(ROOT, "data.json");
+/* Samme opsætning som api.php. Lokalt bliver data liggende i projektmappen —
+   filen uden for roden bruges kun, hvis den allerede findes. */
+const DATA_OUTSIDE = join(ROOT, "..", "zachgpt-data.json");
+const DATA_INSIDE = join(ROOT, "data.json");
+const DATA = existsSync(DATA_OUTSIDE) ? DATA_OUTSIDE : DATA_INSIDE;
 // Samme rækkefølge som api.php: uden for roden først, så i roden.
 const SECRET_PATHS = [
   join(ROOT, "..", "zachgpt-admin-password.txt"),

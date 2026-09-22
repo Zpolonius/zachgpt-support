@@ -27,6 +27,7 @@ browseren — så kører den på `localStorage`.
 | `js/config.js` | Hvilket datalag der bruges |
 | `js/data.js` | **Alt det sjove.** Linjeposter, priser, hastegrader, niveauer, replikker |
 | `admin-password.txt` | Adgangskoden. Ligger uden for Git — opret den selv |
+| `data.json` | Hele databasen. Uden for Git — se advarslen om deploys |
 | `js/store.js` | Datalaget — tre udskiftelige backends |
 | `js/app.js` | Visninger og logik |
 | `server/server.mjs` | Statisk server + JSON-API til lokal kørsel (Node) |
@@ -173,8 +174,27 @@ så sættes `apiBase` til `"/api.php"` i `js/config.js`.
 **Bemærk:** `.htaccess` begynder med et punktum, så nogle FTP-klienter skjuler
 den. Slå visning af skjulte filer til, hvis den ikke ser ud til at blive uploadet.
 
-`data.json` er hele databasen og ligger uden for Git. Tag en kopi, inden du
-rydder op i filerne.
+### Vigtigt: deploys rydder mappen
+
+Et Git-deploy erstatter hele mappen med repoets indhold. **Alt, der ikke står i
+repoet, bliver slettet** — også databasen og adgangskoden, netop fordi de med
+vilje holdes uden for Git.
+
+Derfor leder serveren efter begge filer ét niveau **over** web-roden først:
+
+| Ligger helst her | Ellers her | Indhold |
+|---|---|---|
+| `../zachgpt-data.json` | `data.json` | Hele databasen |
+| `../zachgpt-admin-password.txt` | `admin-password.txt` | Adgangskoden |
+
+Mappen ovenover røres ikke af deployet, så dine regninger overlever.
+
+Findes `data.json` i roden, men ikke filen udenfor, flytter serveren indholdet
+op automatisk ved første skrivning — så skiftet koster ingen data. Kan PHP ikke
+skrive uden for roden, bruges `data.json` i roden som før, og så bliver den
+slettet ved hvert deploy.
+
+Tag en kopi af datafilen en gang imellem. Den findes kun ét sted.
 
 ## Artifact-versionen
 

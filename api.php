@@ -18,7 +18,12 @@ const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings', 'presets'];
    og betale — men ikke lave deres egne regninger eller pille ved priserne. */
 const PROTECTED = ['invoices', 'presets', 'settings'];
 
-$DATA = __DIR__ . '/data.json';
+/* Et Git-deploy rydder typisk hele mappen og lægger repoet ud på ny. Derfor
+   bor databasen helst ét niveau over web-roden, hvor deployet ikke når den.
+   Ligger der allerede en data.json i roden, flyttes indholdet automatisk med
+   op første gang — så ingen regninger går tabt ved skiftet. */
+$DATA_OUTSIDE = dirname(__DIR__) . '/zachgpt-data.json';
+$DATA_INSIDE  = __DIR__ . '/data.json';
 
 /* Adgangskoden søges først uden for web-roden, hvor ingen webserver kan levere
    den overhovedet. Findes den ikke der, bruges roden, hvor .htaccess spærrer. */
@@ -36,13 +41,27 @@ function fail(int $code, string $message): void
 
 /* Læs, ændr og skriv under én lås, så to samtidige kald ikke taber hinandens data.
  * $fn får hele datasættet som reference og returnerer svaret til klienten. */
+function dataFile(): string
+{
+    global $DATA_OUTSIDE, $DATA_INSIDE;
+
+    if (file_exists($DATA_OUTSIDE)) {
+        return $DATA_OUTSIDE;
+    }
+    if (is_writable(dirname($DATA_OUTSIDE))) {
+        if (file_exists($DATA_INSIDE)) {
+            @copy($DATA_INSIDE, $DATA_OUTSIDE);
+        }
+        return $DATA_OUTSIDE;
+    }
+    return $DATA_INSIDE; // kan ikke skrive uden for roden — så blokerer .htaccess i det mindste adgangen
+}
+
 function mutate(callable $fn)
 {
-    global $DATA;
-
-    $fh = @fopen($DATA, 'c+');
+    $fh = @fopen(dataFile(), 'c+');
     if ($fh === false) {
-        fail(500, 'kan ikke åbne data.json — tjek skriverettigheder');
+        fail(500, 'kan ikke åbne datafilen — tjek skriverettigheder');
     }
     flock($fh, LOCK_EX);
 

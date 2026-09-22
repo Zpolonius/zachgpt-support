@@ -13,6 +13,10 @@
   var invoices = [], tickets = [], tips = {};
   var invoicesLoaded = false;
   var settings = {};
+  var savedPresets = [];   // tilrettede og nye linjeposter fra databasen
+  var catalogOpen = false;
+  var lockRequired = false;   // serveren kræver adgangskode
+  var unlocked = false;       // og vi har den
   var view = "queue", currentSlug = null, editing = null, draft = null;
   var lastTicket = null;
   var main = document.getElementById("main");
@@ -40,9 +44,53 @@
     for (var i = 0; i < TIERS.length; i++) if (pct >= TIERS[i].min) return TIERS[i];
     return TIERS[TIERS.length - 1];
   }
+  /* Linjeposterne i data.js er udgangspunktet. Databasen kan rette dem,
+     tilføje nye og skjule dem, du er blevet træt af. */
+  function catalogueAll() {
+    var byId = {};
+    PRESETS.forEach(function (p, i) {
+      byId[p.id] = { id: p.id, desc: p.desc, note: p.note, unit: p.unit, builtin: true, order: i, deleted: false };
+    });
+    savedPresets.forEach(function (c) {
+      var base = byId[c.id] || { builtin: false, order: 1000, desc: "", note: "", unit: 0 };
+      byId[c.id] = {
+        id: c.id,
+        desc: c.desc !== undefined ? c.desc : base.desc,
+        note: c.note !== undefined ? c.note : base.note,
+        unit: Number(c.unit !== undefined ? c.unit : base.unit) || 0,
+        builtin: !!base.builtin,
+        deleted: !!c.deleted,
+        order: c.order !== undefined ? Number(c.order) : base.order
+      };
+    });
+    return Object.keys(byId).map(function (k) { return byId[k]; })
+      .sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+  }
+
+  function catalogue() {
+    return catalogueAll().filter(function (p) { return !p.deleted; });
+  }
+
   function presetById(id) {
-    for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i].id === id) return PRESETS[i];
+    var all = catalogueAll();
+    for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
     return null;
+  }
+
+  function presetByDesc(desc) {
+    var all = catalogueAll();
+    for (var i = 0; i < all.length; i++) if (all[i].desc === desc) return all[i];
+    return null;
+  }
+
+  function freshPresetId(desc) {
+    var base = slugify(desc) || "post";
+    var taken = {};
+    catalogueAll().forEach(function (p) { taken[p.id] = true; });
+    if (!taken[base]) return base;
+    var n = 2;
+    while (taken[base + "-" + n]) n++;
+    return base + "-" + n;
   }
   function urgencyById(id) {
     for (var i = 0; i < URGENCY.length; i++) if (URGENCY[i].id === id) return URGENCY[i];
@@ -65,6 +113,12 @@
       connected = store.ok();
       dbReady = true;
 
+      store.authRequired().then(function (required) {
+        lockRequired = required;
+        unlocked = !required || store.hasToken();
+        render();
+      });
+
       store.watch("invoices", function (docs) {
         invoices = docs.map(function (v) {
           return {
@@ -85,6 +139,11 @@
             status: v.status || "open", at: v.at || "", doneAt: v.doneAt || ""
           };
         }).sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
+        render();
+      });
+
+      store.watch("presets", function (docs) {
+        savedPresets = docs;
         render();
       });
 
@@ -317,7 +376,7 @@
   }
 
   function ticketForm() {
-    var cats = PRESETS.filter(function (p) { return p.id !== "navn"; }).map(function (p) {
+    var cats = catalogue().filter(function (p) { return p.id !== "navn"; }).map(function (p) {
       return '<option value="' + p.id + '">' + esc(p.desc) + '</option>';
     }).join("");
     var urg = URGENCY.map(function (u, i) {
@@ -738,7 +797,7 @@
   }
   function draftItems() {
     var items = [];
-    PRESETS.forEach(function (p) {
+    catalogue().forEach(function (p) {
       var qty = draft.picked[p.id];
       if (qty > 0) {
         var note = draft.notes[p.id];
@@ -790,6 +849,7 @@
   }
 
   function renderAdmin() {
+    if (lockRequired && !unlocked) { renderLock(); return; }
     if (!draft) draft = blankDraft();
 
     var unbilled = unbilledByPerson();
@@ -802,7 +862,7 @@
     }).join("") : '<div class="empty"><p>Ingen løste sager afventer opgørelse.</p>' +
       '<p>Marker sager som løst i Køen, så dukker de op her.</p></div>';
 
-    var presetHtml = PRESETS.map(function (p) {
+    var presetHtml = catalogue().map(function (p) {
       var qty = draft.picked[p.id] || 0;
       return '<div class="preset" data-on="' + (qty > 0 ? 1 : 0) + '">' +
         '<input type="checkbox" id="p-' + p.id + '" data-pid="' + p.id + '"' + (qty > 0 ? " checked" : "") + '>' +
@@ -824,6 +884,7 @@
         '<input class="num" type="text" inputmode="numeric" data-c="unit" data-i="' + i + '" value="' + esc(c.unit) + '" aria-label="Pris">' +
         '<button type="button" data-rm="' + i + '" aria-label="Fjern linje">×</button>' +
         '<input class="c-note" type="text" data-c="note" data-i="' + i + '" value="' + esc(c.note) + '" placeholder="Note under linjen (valgfri)" aria-label="Note">' +
+        '<button class="c-keep" type="button" data-keep="' + i + '">Gem i katalog</button>' +
       '</div>';
     }).join("");
 
@@ -850,6 +911,7 @@
         '<p class="eyebrow">Admin · Kun for Zacharias</p>' +
         '<h1>' + (editing ? "Rediger regning" : "Gør arbejdet op") + '</h1>' +
         '<p class="lede">Løste sager samles per person. Ét klik, så er linjeposterne udfyldt — derefter kan du finpudse dem.</p>' +
+        (lockRequired ? '<button class="logout" type="button" id="lock-out">Lås Admin igen</button>' : "") +
       '</section>' +
       dbWarning() +
       '<div class="notice">Del ét link til alle. De opretter selv sager, og finder deres egen regning i receptionen. Kun du kan oprette og redigere regninger.</div>' +
@@ -883,6 +945,13 @@
         '<span id="save-msg" aria-live="polite" style="font-size:14px;color:var(--muted)"></span>' +
       '</div>' +
 
+      '<h2>Priskatalog</h2>' +
+      '<p style="margin:-6px 0 14px;font-size:13.5px;color:var(--muted)">De faste linjeposter og deres priser. Ret dem, tilføj nye, eller skjul dem du er blevet træt af — ændringerne gælder fremover og rører ikke regninger, der allerede er lavet.</p>' +
+      '<button class="btn-secondary" type="button" id="toggle-catalog">' +
+        (catalogOpen ? "Luk priskatalog" : "Rediger priskatalog (" + catalogue().length + " poster)") +
+      '</button>' +
+      (catalogOpen ? catalogHtml() : "") +
+
       '<h2>Delingslink</h2>' +
       '<div class="field">' +
         '<label for="f-share">Linket dine kolleger åbner</label>' +
@@ -907,6 +976,13 @@
   }
 
   function wireAdmin() {
+    var out = document.getElementById("lock-out");
+    if (out) out.addEventListener("click", function () {
+      store.logout();
+      unlocked = false;
+      renderLock();
+    });
+
     var nameEl = document.getElementById("f-name");
     var greetEl = document.getElementById("f-greet");
     var discEl = document.getElementById("f-disc");
@@ -963,6 +1039,34 @@
       b.addEventListener("click", function () { draft.custom.splice(Number(b.dataset.rm), 1); renderAdmin(); });
     });
 
+    /* En god engangslinje kan forfremmes til fast post — og bliver samtidig
+       til et flueben på den regning, du er i gang med. */
+    main.querySelectorAll("[data-keep]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = Number(b.dataset.keep);
+        var c = draft.custom[i];
+        if (!c || !c.desc) { b.textContent = "Mangler tekst"; setTimeout(function () { b.textContent = "Gem i katalog"; }, 1600); return; }
+        var id = freshPresetId(c.desc);
+        b.textContent = "Gemmer…";
+        store.set("presets", id, {
+          desc: c.desc, note: c.note || "", unit: Number(c.unit) || 0,
+          order: 1000 + catalogueAll().length, deleted: false
+        }).then(function () {
+          draft.custom.splice(i, 1);
+          draft.picked[id] = Number(c.qty) || 1;
+          if (c.note) draft.notes[id] = c.note;
+          renderAdmin();
+          var m = document.getElementById("cat-msg");
+          if (m) m.textContent = "Gemt i kataloget.";
+        }).catch(function () {
+          b.textContent = "Kunne ikke gemme";
+          setTimeout(function () { b.textContent = "Gem i katalog"; }, 1800);
+        });
+      });
+    });
+
+    wireCatalog();
+
     document.getElementById("add-line").addEventListener("click", function () {
       draft.custom.push({ desc: "", note: "", qty: 1, unit: 100 });
       renderAdmin();
@@ -1015,6 +1119,157 @@
     });
   }
 
+  function renderLock() {
+    main.innerHTML =
+      '<section class="hero">' +
+        '<p class="eyebrow">Admin · Adgang</p>' +
+        '<h1>Kun for Zacharias.</h1>' +
+        '<p class="lede">Resten af siden er åben for alle. Det her er ikke.</p>' +
+      '</section>' +
+      '<div class="lock">' +
+        '<h3>Adgangskode</h3>' +
+        '<p>Regninger og priser kan kun ændres herfra.</p>' +
+        '<div class="row">' +
+          '<input type="password" id="lock-pw" autocomplete="current-password" aria-label="Adgangskode">' +
+          '<button class="btn-primary" type="button" id="lock-go">Luk op</button>' +
+        '</div>' +
+        '<p class="msg" id="lock-msg" aria-live="polite"></p>' +
+      '</div>';
+
+    var input = document.getElementById("lock-pw");
+    var msg = document.getElementById("lock-msg");
+
+    function attempt() {
+      var pw = input.value;
+      if (!pw) { input.focus(); return; }
+      msg.textContent = "Tjekker…";
+      store.login(pw).then(function () {
+        unlocked = true;
+        renderAdmin();
+      }).catch(function (e) {
+        msg.textContent = e && e.code === "unauthorised"
+          ? "Forkert adgangskode."
+          : "Kunne ikke kontakte serveren.";
+        input.select();
+      });
+    }
+
+    document.getElementById("lock-go").addEventListener("click", attempt);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") attempt(); });
+    input.focus();
+  }
+
+  function catalogHtml() {
+    var rows = catalogueAll().map(function (p) {
+      return '<div class="catrow' + (p.deleted ? " gone" : "") + '">' +
+        '<input type="text" data-cat="desc" data-id="' + esc(p.id) + '" value="' + esc(p.desc) + '" placeholder="Beskrivelse" aria-label="Beskrivelse">' +
+        '<input class="num" type="text" inputmode="numeric" data-cat="unit" data-id="' + esc(p.id) + '" value="' + esc(p.unit) + '" aria-label="Pris i kroner">' +
+        '<input class="note" type="text" data-cat="note" data-id="' + esc(p.id) + '" value="' + esc(p.note) + '" placeholder="Note under linjen" aria-label="Note">' +
+        '<span class="acts">' +
+          '<button type="button" data-catsave="' + esc(p.id) + '">Gem</button>' +
+          (p.deleted
+            ? '<button type="button" data-catshow="' + esc(p.id) + '">Gendan</button>'
+            : '<button type="button" class="del" data-cathide="' + esc(p.id) + '">' + (p.builtin ? "Skjul" : "Slet") + '</button>') +
+        '</span>' +
+      '</div>';
+    }).join("");
+
+    return '<div class="catalog">' + rows +
+      '<div class="catrow new">' +
+        '<input type="text" id="new-desc" placeholder="Ny linjepost, fx “Gennemgik en aftale du ikke selv gad læse”" aria-label="Beskrivelse">' +
+        '<input class="num" type="text" inputmode="numeric" id="new-unit" value="250" aria-label="Pris i kroner">' +
+        '<input class="note" type="text" id="new-note" placeholder="Note under linjen (valgfri)" aria-label="Note">' +
+        '<span class="acts"><button type="button" id="new-add">Tilføj</button></span>' +
+      '</div>' +
+      '<p id="cat-msg" aria-live="polite" style="font-size:14px;color:var(--muted);margin:10px 0 0"></p>' +
+    '</div>';
+  }
+
+  function savePreset(id, body, msgText) {
+    var msg = document.getElementById("cat-msg");
+    if (msg) msg.textContent = "Gemmer…";
+    return store.set("presets", id, body).then(function () {
+      var m = document.getElementById("cat-msg");
+      if (m) m.textContent = msgText;
+    }).catch(function () {
+      var m = document.getElementById("cat-msg");
+      if (m) m.textContent = "Kunne ikke gemme.";
+    });
+  }
+
+  function wireCatalog() {
+    var toggle = document.getElementById("toggle-catalog");
+    if (toggle) toggle.addEventListener("click", function () { catalogOpen = !catalogOpen; renderAdmin(); });
+    if (!catalogOpen) return;
+
+    function readRow(id) {
+      var pick = function (field) {
+        return main.querySelector('[data-cat="' + field + '"][data-id="' + id + '"]');
+      };
+      var p = presetById(id) || {};
+      return {
+        desc: pick("desc").value.trim(),
+        note: pick("note").value.trim(),
+        unit: Number(pick("unit").value.replace(/[^0-9]/g, "")) || 0,
+        order: p.order,
+        deleted: !!p.deleted
+      };
+    }
+
+    main.querySelectorAll("[data-catsave]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.dataset.catsave;
+        var body = readRow(id);
+        if (!body.desc) {
+          document.getElementById("cat-msg").textContent = "Beskrivelsen må ikke være tom.";
+          return;
+        }
+        savePreset(id, body, "Gemt: " + body.desc);
+      });
+    });
+
+    main.querySelectorAll("[data-cathide]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.dataset.cathide;
+        var p = presetById(id);
+        if (!p) return;
+        if (!window.confirm((p.builtin ? "Skjul" : "Slet") + " “" + p.desc + "”? Regninger, der allerede bruger den, er upåvirkede.")) return;
+        if (p.builtin) {
+          savePreset(id, { desc: p.desc, note: p.note, unit: p.unit, order: p.order, deleted: true }, "Skjult: " + p.desc);
+        } else {
+          store.remove("presets", id).catch(function () {});
+        }
+      });
+    });
+
+    main.querySelectorAll("[data-catshow]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.dataset.catshow;
+        var body = readRow(id);
+        body.deleted = false;
+        savePreset(id, body, "Gendannet.");
+      });
+    });
+
+    var add = document.getElementById("new-add");
+    if (add) add.addEventListener("click", function () {
+      var desc = document.getElementById("new-desc").value.trim();
+      var msg = document.getElementById("cat-msg");
+      if (!desc) {
+        msg.textContent = "Skriv en beskrivelse først.";
+        document.getElementById("new-desc").focus();
+        return;
+      }
+      savePreset(freshPresetId(desc), {
+        desc: desc,
+        note: document.getElementById("new-note").value.trim(),
+        unit: Number(document.getElementById("new-unit").value.replace(/[^0-9]/g, "")) || 0,
+        order: 1000 + catalogueAll().length,
+        deleted: false
+      }, "Tilføjet: " + desc);
+    });
+  }
+
   function updateTotal() {
     var el = main.querySelector(".admin-total span:last-child");
     if (el) el.textContent = kr(draftTotal());
@@ -1028,7 +1283,7 @@
     draft.slug = slug; draft.name = inv.name; draft.greeting = inv.greeting;
     draft.discount = inv.discount || 0;
     (inv.items || []).forEach(function (it) {
-      var p = PRESETS.filter(function (x) { return x.desc === it.desc; })[0];
+      var p = presetByDesc(it.desc);
       if (p) { draft.picked[p.id] = it.qty; draft.notes[p.id] = it.note || ""; }
       else draft.custom.push({ desc: it.desc, note: it.note || "", qty: it.qty, unit: it.unit });
     });

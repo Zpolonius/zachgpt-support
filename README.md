@@ -26,6 +26,7 @@ browseren — så kører den på `localStorage`.
 | `css/styles.css` | Al styling. Farver ligger som CSS-variabler øverst |
 | `js/config.js` | Hvilket datalag der bruges |
 | `js/data.js` | **Alt det sjove.** Linjeposter, priser, hastegrader, niveauer, replikker |
+| `admin-password.txt` | Adgangskoden. Ligger uden for Git — opret den selv |
 | `js/store.js` | Datalaget — tre udskiftelige backends |
 | `js/app.js` | Visninger og logik |
 | `server/server.mjs` | Statisk server + JSON-API til lokal kørsel (Node) |
@@ -60,12 +61,49 @@ PATCH  /api/<samling>/<id>   -> {ok:true}    (fletter ind)
 DELETE /api/<samling>/<id>   -> {ok:true}
 ```
 
-Samlinger: `invoices`, `tickets`, `tips`, `settings`. Der er ingen websockets — klienten
+Samlinger: `invoices`, `tickets`, `tips`, `settings`, `presets`. Der er ingen websockets — klienten
 poller hvert fjerde sekund, hvilket er rigeligt til tyve kolleger.
 
 Skal det op på Supabase, Firebase eller noget helt tredje, så skriv en backend
 med de fem metoder (`watch`, `add`, `set`, `update`, `remove`) i `js/store.js`
 og returnér den fra `pick()`.
+
+## Priskatalog
+
+Linjeposterne i `js/data.js` er udgangspunktet. Under **Admin → Priskatalog** kan
+de rettes, få nye priser, eller skjules — og du kan tilføje helt nye. Ændringerne
+lægger sig i databasen som overskrivninger, så `data.js` bliver ved med at være
+det rene udgangspunkt, og en skjult post kan altid gendannes.
+
+Regninger, der allerede er lavet, er upåvirkede: linjeposterne kopieres ind i
+regningen, når den gemmes.
+
+Har du skrevet en god engangslinje under **Egne linjer**, kan den forfremmes med
+**Gem i katalog**. Den bliver samtidig til et flueben på den regning, du er i
+gang med.
+
+## Adgangskode til Admin
+
+Læg en fil ved navn `admin-password.txt` i roden med adgangskoden som eneste
+indhold:
+
+```
+mit-hemmelige-kodeord
+```
+
+Filen ligger uden for Git og blokeres af `.htaccess`. Findes den ikke, er alt
+åbent — så hvis du hoster siden, bør du oprette den.
+
+Serveren kræver derefter adgangskode for at skrive til `invoices`, `presets` og
+`settings`, samt for enhver sletning. Kolleger kan stadig oprette sager, betale
+og nominere uden kode.
+
+Beskyttelsen sidder i serveren, ikke kun i browseren, så API'et kan heller ikke
+misbruges udenom siden. Det er nok til at holde kolleger ude — det er ikke
+rigtig brugerstyring, og adgangskoden deles af alle, der kender den.
+
+Artifact-versionen bruger den ikke: dér er skriveadgang allerede styret af
+databasens egne regler.
 
 ## Links til den enkelte
 

@@ -24,7 +24,7 @@ window.ZG = window.ZG || {};
 (function (ZG) {
   "use strict";
 
-  var COLLECTIONS = ["invoices", "tickets", "tips", "settings"];
+  var COLLECTIONS = ["invoices", "tickets", "tips", "settings", "presets"];
 
   /* ---------- Artifact-databasen ---------- */
 
@@ -65,22 +65,56 @@ window.ZG = window.ZG || {};
    * Der er ingen websockets — vi poller. Simpelt, og rigeligt til formålet.
    */
 
+  var TOKEN_KEY = "zachgpt-admin-token";
+
   function RestBackend(base, pollMs) {
     this.base = String(base).replace(/\/+$/, "");
     this.pollMs = pollMs || 4000;
     this.timers = {};
+    try { this.token = localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { this.token = ""; }
   }
   RestBackend.prototype.kind = "rest";
 
   RestBackend.prototype.req = function (method, path, body) {
+    var headers = {};
+    if (body) headers["Content-Type"] = "application/json";
+    if (this.token) headers["X-ZG-Token"] = this.token;
+
     return fetch(this.base + path, {
       method: method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
+      if (r.status === 401) {
+        var err = new Error("adgangskode kræves");
+        err.code = "unauthorised";
+        throw err;
+      }
       if (!r.ok) throw new Error(method + " " + path + " svarede " + r.status);
       return r.status === 204 ? null : r.json();
     });
+  };
+
+  /* Er der overhovedet sat en adgangskode på serveren? */
+  RestBackend.prototype.authRequired = function () {
+    return this.req("GET", "/auth").then(function (r) { return !!(r && r.required); })
+      .catch(function () { return false; });
+  };
+
+  RestBackend.prototype.hasToken = function () { return !!this.token; };
+
+  RestBackend.prototype.login = function (password) {
+    var self = this;
+    return this.req("POST", "/auth", { password: password }).then(function (r) {
+      self.token = (r && r.token) || "";
+      try { localStorage.setItem(TOKEN_KEY, self.token); } catch (e) { /* privat vindue */ }
+      return true;
+    });
+  };
+
+  RestBackend.prototype.logout = function () {
+    this.token = "";
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ligegyldigt */ }
   };
 
   RestBackend.prototype.watch = function (col, cb) {
@@ -228,6 +262,18 @@ window.ZG = window.ZG || {};
       kind: function () { return backend ? backend.kind : null; },
       ok: function () { return !!backend; },
       watch: function (col, cb) { return backend ? backend.watch(col, cb) : function () {}; },
+
+      /* Adgangskode findes kun på REST-backenden. Artifacten har sine egne
+         regler, og localStorage har ingen at beskytte sig imod. */
+      authRequired: function () {
+        return backend && backend.authRequired ? backend.authRequired() : Promise.resolve(false);
+      },
+      hasToken: function () { return !!(backend && backend.hasToken && backend.hasToken()); },
+      login: function (pw) {
+        return backend && backend.login ? backend.login(pw) : Promise.reject(new Error("ikke muligt her"));
+      },
+      logout: function () { if (backend && backend.logout) backend.logout(); },
+
       add: function (col, body) { return backend ? backend.add(col, body) : Promise.reject(new Error("intet datalag")); },
       set: function (col, id, body) { return backend ? backend.set(col, id, body) : Promise.reject(new Error("intet datalag")); },
       update: function (col, id, patch) { return backend ? backend.update(col, id, patch) : Promise.reject(new Error("intet datalag")); },

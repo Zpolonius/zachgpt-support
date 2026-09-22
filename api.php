@@ -12,8 +12,14 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings'];
-$DATA = __DIR__ . '/data.json';
+const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings', 'presets'];
+
+/* Samlinger, hvor skrivning kræver adgangskode. Kolleger må gerne oprette sager
+   og betale — men ikke lave deres egne regninger eller pille ved priserne. */
+const PROTECTED = ['invoices', 'presets', 'settings'];
+
+$DATA   = __DIR__ . '/data.json';
+$SECRET = __DIR__ . '/admin-password.txt';
 
 function fail(int $code, string $message): void
 {
@@ -72,6 +78,36 @@ function body(): array
     return is_array($parsed) ? $parsed : [];
 }
 
+/* ---------- Adgangskode ---------- *
+ * Findes admin-password.txt ikke, er alt åbent som før. Filen ligger uden for
+ * Git og blokeres af .htaccess, så indholdet kan ikke hentes i browseren.
+ */
+
+function adminPassword(): ?string
+{
+    global $SECRET;
+    if (!is_readable($SECRET)) {
+        return null;
+    }
+    $pw = trim((string) file_get_contents($SECRET));
+    return $pw === '' ? null : $pw;
+}
+
+function tokenFor(string $password): string
+{
+    return hash('sha256', 'zachgpt:' . $password);
+}
+
+function isAuthorised(): bool
+{
+    $pw = adminPassword();
+    if ($pw === null) {
+        return true; // ingen adgangskode sat
+    }
+    $sent = (string) ($_SERVER['HTTP_X_ZG_TOKEN'] ?? '');
+    return $sent !== '' && hash_equals(tokenFor($pw), $sent);
+}
+
 /* ---------- Ruting ---------- */
 
 /* Ikke alle webhoteller udfylder PATH_INFO — så falder vi tilbage på REQUEST_URI. */
@@ -89,8 +125,39 @@ $collection = $parts[0] ?? '';
 $id         = $parts[1] ?? null;
 $method     = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+/* /api/auth ligger uden for samlingerne. */
+if ($collection === 'auth') {
+    if ($method === 'GET') {
+        echo json_encode(['required' => adminPassword() !== null]);
+        exit;
+    }
+    if ($method === 'POST') {
+        $pw = adminPassword();
+        if ($pw === null) {
+            echo json_encode(['token' => '', 'required' => false]);
+            exit;
+        }
+        $sent = (string) (body()['password'] ?? '');
+        /* Lille forsinkelse, så adgangskoden ikke kan gættes i et hurtigt loop. */
+        usleep(400000);
+        if ($sent === '' || !hash_equals($pw, $sent)) {
+            fail(401, 'forkert adgangskode');
+        }
+        echo json_encode(['token' => tokenFor($pw), 'required' => true]);
+        exit;
+    }
+    fail(405, 'metode ikke tilladt');
+}
+
 if (!in_array($collection, COLLECTIONS, true)) {
     fail(404, 'ukendt samling');
+}
+
+$needsAuth = $method !== 'GET'
+    && (in_array($collection, PROTECTED, true) || $method === 'DELETE');
+
+if ($needsAuth && !isAuthorised()) {
+    fail(401, 'adgangskode kræves');
 }
 if ($id !== null && !preg_match('/^[A-Za-z0-9_\-.~:@+]{1,200}$/', $id)) {
     fail(400, 'ugyldigt id');

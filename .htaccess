@@ -6,7 +6,7 @@ RewriteRule ^api/?$      api.php      [L,QSA]
 RewriteRule ^api/(.*)$   api.php/$1   [L,QSA]
 
 # Datafilen må ikke kunne hentes direkte i browseren.
-<Files "data.json">
+<FilesMatch "^(data\.json|admin-password\.txt)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
@@ -14,4 +14,4 @@ RewriteRule ^api/(.*)$   api.php/$1   [L,QSA]
     Order allow,deny
     Deny from all
   </IfModule>
-</Files>
+</FilesMatch>

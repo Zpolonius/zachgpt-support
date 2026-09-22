@@ -18,19 +18,34 @@ const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings', 'presets'];
    og betale — men ikke lave deres egne regninger eller pille ved priserne. */
 const PROTECTED = ['invoices', 'presets', 'settings'];
 
-/* Et Git-deploy rydder typisk hele mappen og lægger repoet ud på ny. Derfor
-   bor databasen helst ét niveau over web-roden, hvor deployet ikke når den.
-   Ligger der allerede en data.json i roden, flyttes indholdet automatisk med
-   op første gang — så ingen regninger går tabt ved skiftet. */
-$DATA_OUTSIDE = dirname(__DIR__) . '/zachgpt-data.json';
+/* ---------------------------------------------------------------------------
+ * HVOR LIGGER DATA?
+ *
+ * Et Git-deploy rydder hele mappen og lægger repoet ud på ny, så alt der ikke
+ * står i Git bliver slettet. Databasen skal derfor ligge et sted, deployet ikke
+ * rører — og som webserveren ikke serverer.
+ *
+ * Sæt en absolut sti her, hvis standarden ikke passer. Denne fil er en del af
+ * repoet, så indstillingen overlever deploys. Stien er ikke hemmelig.
+ *
+ *   $DATA_OVERRIDE = '/home/dinbruger/zachgpt/data.json';
+ *
+ * Lad den stå tom for at bruge standarden: ét niveau over denne mappe.
+ * Tjek med /api/health, om det faktisk landede uden for web-roden.
+ * ------------------------------------------------------------------------- */
+$DATA_OVERRIDE   = '';
+$SECRET_OVERRIDE = '';
+
+$DATA_OUTSIDE = $DATA_OVERRIDE !== '' ? $DATA_OVERRIDE : dirname(__DIR__) . '/zachgpt-data.json';
 $DATA_INSIDE  = __DIR__ . '/data.json';
 
 /* Adgangskoden søges først uden for web-roden, hvor ingen webserver kan levere
    den overhovedet. Findes den ikke der, bruges roden, hvor .htaccess spærrer. */
-$SECRET_PATHS = [
+$SECRET_PATHS = array_values(array_filter([
+    $SECRET_OVERRIDE,
     dirname(__DIR__) . '/zachgpt-admin-password.txt',
     __DIR__ . '/admin-password.txt',
-];
+]));
 
 function fail(int $code, string $message): void
 {
@@ -168,6 +183,31 @@ $parts = $path === '' ? [] : array_map('rawurldecode', explode('/', $path));
 $collection = $parts[0] ?? '';
 $id         = $parts[1] ?? null;
 $method     = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+/* /api/health siger, om opsætningen er som den skal være — uden at røbe stier. */
+if ($collection === 'health') {
+    global $DATA_INSIDE;
+    $file = dataFile();
+    $counts = [];
+    foreach (COLLECTIONS as $c) {
+        $counts[$c] = 0;
+    }
+    if (file_exists($file)) {
+        $all = json_decode((string) file_get_contents($file), true);
+        if (is_array($all)) {
+            foreach (COLLECTIONS as $c) {
+                $counts[$c] = is_array($all[$c] ?? null) ? count($all[$c]) : 0;
+            }
+        }
+    }
+    echo json_encode([
+        'dataUdenForWebroden' => $file !== $DATA_INSIDE,
+        'kanSkrives'          => file_exists($file) ? is_writable($file) : is_writable(dirname($file)),
+        'adgangskodeSat'      => adminPassword() !== null,
+        'antal'               => $counts,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 /* /api/auth ligger uden for samlingerne. */
 if ($collection === 'auth') {

@@ -189,6 +189,36 @@ Derfor leder serveren efter begge filer ét niveau **over** web-roden først:
 
 Mappen ovenover røres ikke af deployet, så dine regninger overlever.
 
+**Men tjek at den mappe ikke selv bliver serveret.** Ligger subdomænet som
+`/public_html/zachgpt/`, er ét niveau op hovedsidens web-rod — og så kan filen
+hentes på `ditdomæne.dk/zachgpt-data.json`. Passer standarden ikke, så sæt en
+absolut sti i toppen af `api.php`:
+
+```php
+$DATA_OVERRIDE   = '/home/dinbruger/zachgpt/data.json';
+$SECRET_OVERRIDE = '/home/dinbruger/zachgpt/password.txt';
+```
+
+`api.php` er en del af repoet, så indstillingen overlever deploys. Stierne er
+ikke hemmelige — kun filernes indhold er.
+
+### Tjek opsætningen
+
+`https://dit-subdomæne/api/health` svarer:
+
+```json
+{
+  "dataUdenForWebroden": true,
+  "kanSkrives": true,
+  "adgangskodeSat": true,
+  "antal": { "invoices": 2, "tickets": 0, "tips": 0, "settings": 1, "presets": 0 }
+}
+```
+
+`dataUdenForWebroden: false` betyder, at databasen stadig ligger i mappen, som
+deployet rydder — så forsvinder den ved næste deploy. Endepunktet røber ingen
+stier.
+
 Findes `data.json` i roden, men ikke filen udenfor, flytter serveren indholdet
 op automatisk ved første skrivning — så skiftet koster ingen data. Kan PHP ikke
 skrive uden for roden, bruges `data.json` i roden som før, og så bliver den

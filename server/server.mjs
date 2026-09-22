@@ -111,6 +111,18 @@ function readBody(req) {
 async function api(req, res, parts) {
   const [collection, id] = parts;
 
+  if (collection === "health") {
+    const all = await load();
+    const counts = {};
+    for (const c of COLLECTIONS) counts[c] = Object.keys(all[c] ?? {}).length;
+    return send(res, 200, {
+      dataUdenForWebroden: DATA !== DATA_INSIDE,
+      kanSkrives: true,
+      adgangskodeSat: (await adminPassword()) !== null,
+      antal: counts
+    });
+  }
+
   if (collection === "auth") {
     const pw = await adminPassword();
     if (req.method === "GET") return send(res, 200, { required: pw !== null });

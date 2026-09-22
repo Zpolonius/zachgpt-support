@@ -180,19 +180,24 @@ Et Git-deploy erstatter hele mappen med repoets indhold. **Alt, der ikke står i
 repoet, bliver slettet** — også databasen og adgangskoden, netop fordi de med
 vilje holdes uden for Git.
 
-Derfor leder serveren efter begge filer ét niveau **over** web-roden først:
+Databasen lægger sig derfor selv i en mappe `zachgpt-store`, som serveren
+opretter uden for deploy-mappen. Den prøver i denne rækkefølge:
 
-| Ligger helst her | Ellers her | Indhold |
-|---|---|---|
-| `../zachgpt-data.json` | `data.json` | Hele databasen |
-| `../zachgpt-admin-password.txt` | `admin-password.txt` | Adgangskoden |
+1. **Uden for enhver web-rod** — to niveauer over `api.php`.
+   Ligger `api.php` i `/var/www/dit-domæne.dk/zachgpt/`, bliver det
+   `/var/www/zachgpt-store/`. Kan ikke hentes, uanset serveropsætning.
+2. **I web-roden**, fx `/var/www/dit-domæne.dk/zachgpt-store/`. Serveren lægger
+   selv en `.htaccess` med `Deny from all` i mappen.
+3. **`data.json` i deploy-mappen** som sidste udvej — den bliver slettet ved
+   næste deploy.
 
-Mappen ovenover røres ikke af deployet, så dine regninger overlever.
+Findes der allerede en `data.json` i deploy-mappen, kopieres indholdet med over
+ved første skrivning. Du mister altså ikke noget ved at skifte.
 
-**Men tjek at den mappe ikke selv bliver serveret.** Ligger subdomænet som
-`/public_html/zachgpt/`, er ét niveau op hovedsidens web-rod — og så kan filen
-hentes på `ditdomæne.dk/zachgpt-data.json`. Passer standarden ikke, så sæt en
-absolut sti i toppen af `api.php`:
+Adgangskoden følger samme princip: `../zachgpt-admin-password.txt` før
+`admin-password.txt` i roden.
+
+Vil du styre det selv, så sæt en absolut sti i toppen af `api.php`:
 
 ```php
 $DATA_OVERRIDE   = '/home/dinbruger/zachgpt/data.json';
@@ -208,16 +213,28 @@ ikke hemmelige — kun filernes indhold er.
 
 ```json
 {
-  "dataUdenForWebroden": true,
+  "placering": "uden for enhver web-rod",
+  "overleverDeploy": true,
   "kanSkrives": true,
   "adgangskodeSat": true,
   "antal": { "invoices": 2, "tickets": 0, "tips": 0, "settings": 1, "presets": 0 }
 }
 ```
 
-`dataUdenForWebroden: false` betyder, at databasen stadig ligger i mappen, som
-deployet rydder — så forsvinder den ved næste deploy. Endepunktet røber ingen
-stier.
+`overleverDeploy: false` betyder, at databasen stadig ligger i mappen, deployet
+rydder. Endepunktet røber ingen stier.
+
+### Test PHP'en uden at deploye
+
+Er PHP ikke installeret, kan Docker klare det:
+
+```bash
+docker run --rm -v "$PWD":/app -w /app php:8.2-cli php -l api.php
+```
+
+Hele API'et kan køres med PHP's indbyggede server og et lille router-script, der
+sender `/api/...` til `api.php`. Bemærk, at den indbyggede server ikke læser
+`.htaccess`.
 
 Findes `data.json` i roden, men ikke filen udenfor, flytter serveren indholdet
 op automatisk ved første skrivning — så skiftet koster ingen data. Kan PHP ikke

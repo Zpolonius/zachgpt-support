@@ -16,7 +16,7 @@ const COLLECTIONS = ['invoices', 'tickets', 'tips', 'settings', 'presets'];
 
 /* Samlinger, hvor skrivning kræver adgangskode. Kolleger må gerne oprette sager
    og betale — men ikke lave deres egne regninger eller pille ved priserne. */
-const PROTECTED = ['invoices', 'presets', 'settings'];
+const GUARDED = ['invoices', 'presets', 'settings'];
 
 /* ---------------------------------------------------------------------------
  * HVOR LIGGER DATA?
@@ -36,8 +36,36 @@ const PROTECTED = ['invoices', 'presets', 'settings'];
 $DATA_OVERRIDE   = '';
 $SECRET_OVERRIDE = '';
 
-$DATA_OUTSIDE = $DATA_OVERRIDE !== '' ? $DATA_OVERRIDE : dirname(__DIR__) . '/zachgpt-data.json';
-$DATA_INSIDE  = __DIR__ . '/data.json';
+$DATA_INSIDE = __DIR__ . '/data.json';
+
+/* Kandidater til datamappen, sikreste først. Den første, der kan oprettes og
+   skrives i, vinder. Ingen af dem ligger i mappen, deployet rydder. */
+function storageCandidates(): array
+{
+    $webroot = dirname(__DIR__);        // fx /var/www/zpolonius.dk  — serveres!
+    $above   = dirname($webroot);       // fx /var/www               — serveres ikke
+    return [
+        $above . '/zachgpt-store',      // uden for enhver web-rod
+        $webroot . '/zachgpt-store',    // i web-roden, men med egen .htaccess-spærre
+    ];
+}
+
+/* Opret mappen hvis den mangler, og læg altid en spærre i den — mappen kan
+   ligge i en web-rod, og så skal indholdet ikke kunne hentes. */
+function ensureStore(string $dir): bool
+{
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) {
+        return false;
+    }
+    if (!is_writable($dir)) {
+        return false;
+    }
+    $guard = $dir . '/.htaccess';
+    if (!file_exists($guard)) {
+        @file_put_contents($guard, "Require all denied\nOrder allow,deny\nDeny from all\n");
+    }
+    return true;
+}
 
 /* Adgangskoden søges først uden for web-roden, hvor ingen webserver kan levere
    den overhovedet. Findes den ikke der, bruges roden, hvor .htaccess spærrer. */
@@ -58,18 +86,30 @@ function fail(int $code, string $message): void
  * $fn får hele datasættet som reference og returnerer svaret til klienten. */
 function dataFile(): string
 {
-    global $DATA_OUTSIDE, $DATA_INSIDE;
+    global $DATA_OVERRIDE, $DATA_INSIDE;
+    static $resolved = null;
 
-    if (file_exists($DATA_OUTSIDE)) {
-        return $DATA_OUTSIDE;
+    if ($resolved !== null) {
+        return $resolved;
     }
-    if (is_writable(dirname($DATA_OUTSIDE))) {
-        if (file_exists($DATA_INSIDE)) {
-            @copy($DATA_INSIDE, $DATA_OUTSIDE);
+    if ($DATA_OVERRIDE !== '') {
+        return $resolved = $DATA_OVERRIDE;
+    }
+
+    foreach (storageCandidates() as $dir) {
+        $file = $dir . '/data.json';
+        if (file_exists($file)) {
+            return $resolved = $file;
         }
-        return $DATA_OUTSIDE;
+        if (ensureStore($dir)) {
+            /* Flyt en eksisterende database med over, så intet går tabt. */
+            if (file_exists($DATA_INSIDE)) {
+                @copy($DATA_INSIDE, $file);
+            }
+            return $resolved = $file;
+        }
     }
-    return $DATA_INSIDE; // kan ikke skrive uden for roden — så blokerer .htaccess i det mindste adgangen
+    return $resolved = $DATA_INSIDE; // sidste udvej — bliver slettet ved næste deploy
 }
 
 function mutate(callable $fn)
@@ -200,7 +240,19 @@ if ($collection === 'health') {
             }
         }
     }
+    $candidates = storageCandidates();
+    $placering = 'i deploy-mappen';
+    if ($file === $candidates[0] . '/data.json') {
+        $placering = 'uden for enhver web-rod';
+    } elseif ($file === $candidates[1] . '/data.json') {
+        $placering = 'i web-roden, spærret med .htaccess';
+    } elseif ($file !== $DATA_INSIDE) {
+        $placering = 'egen sti fra $DATA_OVERRIDE';
+    }
+
     echo json_encode([
+        'placering'           => $placering,
+        'overleverDeploy'     => $file !== $DATA_INSIDE,
         'dataUdenForWebroden' => $file !== $DATA_INSIDE,
         'kanSkrives'          => file_exists($file) ? is_writable($file) : is_writable(dirname($file)),
         'adgangskodeSat'      => adminPassword() !== null,
@@ -238,7 +290,7 @@ if (!in_array($collection, COLLECTIONS, true)) {
 }
 
 $needsAuth = $method !== 'GET'
-    && (in_array($collection, PROTECTED, true) || $method === 'DELETE');
+    && (in_array($collection, GUARDED, true) || $method === 'DELETE');
 
 if ($needsAuth && !isAuthorised()) {
     fail(401, 'adgangskode kræves');
